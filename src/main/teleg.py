@@ -1,27 +1,19 @@
 import asyncio
+import os
 import re
 import sqlite3
-import threading
-
 import requests
-from selenium.webdriver import Keys
+from selenium.webdriver import Keys, ActionChains
 from telethon import TelegramClient, events, types
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 import time
 from datetime import datetime
-import random
-import string
 from concurrent.futures import ThreadPoolExecutor
 from telethon.tl.types import Channel, Message, Chat
-import nest_asyncio
 from telethon.errors import UsernameInvalidError
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 WHERE_CHANNEL_ID_ = "SELECT enabled FROM channels WHERE channel_id = ?"
 
@@ -46,7 +38,7 @@ executor = ThreadPoolExecutor(max_workers=5)
 api_id = 26761696
 api_hash = 'b1ead8d774105f6b6eac78412d5988c5'
 phone_number = '+393387203564'
-chat_id = "GiovanniReale"#"290862891"  # Sostituisce con il tuo chat_id
+chat_id = "GiovanniReale"  #"290862891"  # Sostituisce con il tuo chat_id
 
 print(api_id)
 print(api_hash)
@@ -90,7 +82,7 @@ client_bot = TelegramClient('bot', api_id, api_hash).start(
     bot_token='8054132307:AAECeEAArzTnvOY2SmkJhOWlcaSlWd00ZoU')
 
 
-def aggiorna_prezzo_asin():
+async def aggiorna_prezzo_asin():
     while True:
         connection = sqlite3.connect('channels.db', timeout=10)
         connection.execute('PRAGMA journal_mode=WAL;')
@@ -100,8 +92,8 @@ def aggiorna_prezzo_asin():
         # Itera sui risultati della query
         for row in cursor.fetchall():
             asin = row[0]  # Estrarre l'ASIN dalla riga
-            products = get_amazon_price(asin)
-            update_price_if_lower_t(True, asin, products[0], products[1], products[2], products[3])
+            products = await get_amazon_price(asin)
+            await update_price_if_lower_t(True, asin, products[0], products[1], products[2], products[3])
             # Esegui le operazioni desiderate con l'ASIN
         cursor.close()
         connection.close()
@@ -119,7 +111,7 @@ async def aggiorna_prezzo_asin_category():
         # Itera sui risultati della query
         for row in cursor.fetchall():
             asin = row[0]  # Estrarre l'ASIN dalla riga
-            products = get_amazon_price(asin)
+            products = await get_amazon_price(asin)
             await update_price_if_lower_t(True, asin, products[0], products[1], products[2], products[3])
             # Esegui le operazioni desiderate con l'ASIN
         cursor.close()
@@ -158,7 +150,7 @@ def insert_price_history_t(asin, price):
         print(f"Errore durante l'inserimento: {e} insert_price_history_t")
 
 
-def get_amazon_price(asin):
+async def get_amazon_price(asin):
     # URL del prodotto Amazon in base all'ASIN
     url = f"https://www.amazon.it/dp/{asin}"
 
@@ -265,6 +257,79 @@ def convert_to_float(price_text):
         return None
 
 
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+
+async def get_minimum_price_selenium(asin):
+    """
+    Estrae il prezzo minimo storico da Keepa tramite Selenium.
+
+    :param asin: Stringa contenente l'ASIN del prodotto.
+    :param driver_path: Il percorso del ChromeDriver.
+    :return: Il prezzo minimo storico come stringa.
+    """
+    # Inizializza il driver di Selenium
+    driver = init_driver()
+    try:
+
+        url = f'https://keepa.com/#!product/1-{asin}'
+        driver.get(url)
+
+        it_div = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//div[@id='currentLanguage']"))
+        )
+        it_div.click()
+        time.sleep(2)
+        # Attendi che il menu a tendina per la selezione del dominio sia caricato e visibile
+        it_domain = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//span[@rel='domain' and @setting='4']"))
+        )
+        # Fai clic sull'elemento del dominio ".it"
+        it_domain.click()
+        time.sleep(1)
+        it_domain = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//span[@rel='domain' and @setting='8']"))
+        )
+
+        # Fai clic sull'elemento del dominio ".it"
+        it_domain.click()
+        time.sleep(1)
+        # URL di Keepa per il prodotto specifico
+
+        hover_element = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, 'statistics')))
+
+        # Simula il passaggio del mouse sopra l'elemento
+        action = ActionChains(driver)
+        action.move_to_element(hover_element).perform()
+        time.sleep(2)
+        # Find the first <tr> element
+        tr_element = driver.find_element(By.XPATH,
+                                         "//div[@id='statisticsContent']//table[@id='statsTable']//tbody//tr[2]")
+        # Find the first <td> element within the <tr> element
+        td1_element = tr_element.find_element(By.XPATH, "./td[1]")
+
+        # Find the second <td> element within the <tr> element
+        td2_element = tr_element.find_element(By.XPATH, "./td[2]")
+        if td2_element is None or td2_element.text == '':
+            print("td2_element is none")
+            td3_element = tr_element.find_element(By.XPATH, "./td[3]")
+            td2_text = td3_element.text
+        else:
+            td2_text = td2_element.text
+        print(td2_text.splitlines()[0])
+        return convert_to_float(td2_text.splitlines()[0])
+    except Exception as e:
+        print(f"Errore durante l'estrazione del prezzo: {e}")
+        amazon_lowest_price = None
+    finally:
+        # Chiude il browser
+        driver.quit()
+
+    return None
+
+
 # Funzione per aggiornare il prezzo se quello nuovo è inferiore a quello attuale
 async def update_price_if_lower(asin, new_price, product_title, brand, category):
     # Recupera il prezzo attuale dal database
@@ -273,8 +338,9 @@ async def update_price_if_lower(asin, new_price, product_title, brand, category)
 
     if result:
         current_price = result[0]
-        # Controlla se il nuovo prezzo è inferiore a quello attuale
-        if new_price is not None and new_price < current_price:
+        minimun_price = await get_minimum_price_selenium(asin)
+        if new_price is not None and new_price != 'P' and new_price != 'E' and new_price < current_price or (
+                minimun_price and new_price != 'P' and new_price != 'E' and new_price <= minimun_price):
             #add_to_chart(asin)
             c.execute(UPDATE_ASIN, (new_price, product_title, brand, category, asin))
             insert_price_history(asin, new_price)
@@ -292,13 +358,19 @@ async def update_price_if_lower(asin, new_price, product_title, brand, category)
 
 # Funzione per inizializzare il webdriver
 def init_driver():
+    os.environ["LANG"] = "it_IT.UTF-8"
+    options = webdriver.ChromeOptions()
+    options.add_argument("--lang=it-IT")  # Imposta la lingua su italiano
+    options.add_argument("--locale=it-IT")  # Imposta il locale su italiano
+    options.add_argument(f"--accept-lang=it")
+    options.add_experimental_option('prefs', {'intl.accept_languages': f'it,it-IT'})
     service = Service('C:/driver/chromedriver.exe')
     # Inizializza il driver con il servizio
-    driver = webdriver.Chrome(service=service)
+    driver = webdriver.Chrome(service=service, options=options)
     return driver
 
 
-def get_asins_from_amazon_search():
+async def get_asins_from_amazon_search():
     """Funzione per cercare prodotti su Amazon e catturare gli ASIN."""
     search_term = "scheda+video+nvidia+amd+rtx+radeon+gaming+overclocked+economica+editing+video"  # Inserisci il termine di ricerca
     category = "Informatica"  # Categoria opzionale
@@ -335,10 +407,10 @@ def get_asins_from_amazon_search():
             for asin in asins:
                 try:
                     print(f"\t{asin}")
-                    product_detail = get_amazon_price(asin)  # Simula l'ottenimento del prezzo di un prodotto
+                    product_detail = await get_amazon_price(asin)  # Simula l'ottenimento del prezzo di un prodotto
                     if isinstance(product_detail[0], (float, int)) and isinstance(product_detail[1], str):
-                        insert_asin_thread(asin, product_detail[0], product_detail[1], product_detail[2],
-                                           product_detail[3])
+                        await insert_asin_thread(asin, product_detail[0], product_detail[1], product_detail[2],
+                                                 product_detail[3])
                 except Exception as e:
                     print(f"Errore durante il recupero dei dettagli dell'ASIN {asin}: {e}")
 
@@ -372,7 +444,9 @@ async def update_price_if_lower_t(update_price, asin, new_price, text, brand, ca
     print(f"update_price_if_lower_t result per asin {asin} ({text}) : {result} e new price {new_price}")
     if result:
         current_price = result[0]
-        if new_price is not None and new_price != 'P' and new_price != 'E' and new_price < current_price:
+        minimun_price = await get_minimum_price_selenium(asin)
+        if new_price is not None and new_price != 'P' and new_price != 'E' and new_price < current_price or (
+                minimun_price and new_price != 'P' and new_price != 'E' and new_price <= minimun_price):
             print(f"update_price_if_lower_t asin trovato {asin}")
             cursor.execute(UPDATE_ASIN, (new_price if update_price else current_price, text, brand, category, asin))
             connection.commit()
@@ -382,7 +456,8 @@ async def update_price_if_lower_t(update_price, asin, new_price, text, brand, ca
             insert_price_history_t(asin, new_price)
             print(
                 f"Prezzo aggiornato per ASIN {asin}: {current_price} -> {new_price} - https://www.amazon.it/dp/{asin}")
-            await send_message_to_telegram(chat_id, f"Prezzo aggiornato per ASIN {asin}: {current_price} -> {new_price} - https://www.amazon.it/dp/{asin}")
+            await send_message_to_telegram(chat_id,
+                                           f"Prezzo aggiornato per ASIN {asin}: {current_price} -> {new_price} - https://www.amazon.it/dp/{asin}")
             #else:
             #print(f"Prezzo non aggiornato per ASIN {asin}: il nuovo prezzo {new_price} non è inferiore a {current_price}")
     else:
@@ -404,7 +479,7 @@ def insert_asin(asin, product_name, price, brand, category):
     conn.commit()
 
 
-def insert_asin_thread(asin, product_name, price, brand, category):
+async def insert_asin_thread(asin, product_name, price, brand, category):
     print(asin if asin else '' + " " + product_name + " " + price if price else '')
     #price_history = get_price_history(asin)
     connection = sqlite3.connect('channels.db', timeout=10)
@@ -466,7 +541,7 @@ async def find_and_expand_links(text):
     # Sostituisce ogni URL corto con quello espanso nel testo
     for short_url, expanded_url in url_mapping.items():
         asin = extract_asin(expanded_url)
-        product_detail = get_amazon_price(asin)
+        product_detail = await get_amazon_price(asin)
 
         if not isinstance(product_detail, list):
             product_detail = alternative_details(asin)
@@ -482,7 +557,7 @@ async def find_and_expand_links(text):
     return text
 
 
-def find_and_expand_links_t(text):
+async def find_and_expand_links_t(text):
     # Trova tutti i link nel testo
     short_urls = find_links(text)
     #print(short_urls)
@@ -494,16 +569,16 @@ def find_and_expand_links_t(text):
         asin = extract_asin(expanded_url)
         print(
             asin if asin is not None else 'ASIN NON TROVATO' + " " + expanded_url if expanded_url is not None else 'URL NON TROVATO')
-        product_detail = get_amazon_price(asin)
+        product_detail = await get_amazon_price(asin)
 
         if not isinstance(product_detail, list):
             product_detail = alternative_details(asin)
 
         print(f"details async {product_detail}")
         if isinstance(product_detail[0], float) and isinstance(product_detail[1], str):
-            insert_asin_thread(asin, product_detail[0], product_detail[1], product_detail[2], product_detail[3])
-            update_price_if_lower_t(False, asin, product_detail[0], product_detail[1], product_detail[2],
-                                    product_detail[3])
+            await insert_asin_thread(asin, product_detail[0], product_detail[1], product_detail[2], product_detail[3])
+            await update_price_if_lower_t(False, asin, product_detail[0], product_detail[1], product_detail[2],
+                                          product_detail[3])
         text = text.replace(short_url, expanded_url)
 
     return text
@@ -622,6 +697,7 @@ async def read_all_channels_recovery():
 
     # Iterate over the channels
     for username in usernames:
+        print(username[0])
         # Get the channel messages
         await get_channel_messages(username[0])
 
@@ -631,32 +707,30 @@ async def read_all_channels_recovery():
 
 
 async def get_channel_messages(channel_username):
-    # Get the channel entity
-    channel = await fetch_entity(channel_username)
-    print(f"channel: {channel}")
-    # Check if the channel is a Channel object
-    if not isinstance(channel, Channel):
-        print(f"Error: {channel_username} is not a channel.")
-        return
+    try:
+        # Get the channel entity
+        channel = await fetch_entity(channel_username)
+        print(f"channel: {channel}")
+        # Check if the channel is a Channel object
+        if not isinstance(channel, Channel):
+            print(f"Error: {channel_username} is not a channel.")
+            return
+        print("Lettura Messaggi")
+        # Get the channel's messages
+        messages = await client.get_messages(channel, limit=500)
 
-    # Get the channel's messages
-    messages = await client.get_messages(channel, limit=100000000000)
-
-    # Iterate over the messages
-    print("Messaggi: " + str(len(messages)))
-    for message in messages:
-        # Check if the message is a Message object
-        if not isinstance(message, Message):
-            continue
-        # Print the message text
-        #print(message.text)
-        find_and_expand_links_t(message.text)
-    print("______________________________________________________________________________________")
-
-
-def run_read_all_channels():
-    print("Run read all loop")
-    asyncio.run(read_all_channels_recovery())
+        # Iterate over the messages
+        print("Messaggi: " + str(len(messages)))
+        for message in messages:
+            # Check if the message is a Message object
+            if not isinstance(message, Message):
+                continue
+            # Print the message text
+            #print(message.text)
+            await find_and_expand_links_t(message.text)
+        print("______________________________________________________________________________________")
+    except Exception as e:
+        print(f"Errore : {e}")
 
 
 async def fetch_entity(channel_username):
@@ -720,7 +794,10 @@ client_bot.start()
 #executor.submit(aggiorna_prezzo_asin)
 async def main():
     print(f"Running main loop")
-    await asyncio.gather(read_all_channels_recovery(), aggiorna_prezzo_asin_category())
+    await asyncio.gather(read_all_channels_recovery()
+                         , aggiorna_prezzo_asin_category()
+                         , get_asins_from_amazon_search()
+                         )
 
 
 client.loop.run_until_complete(main())
