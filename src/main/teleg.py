@@ -46,7 +46,7 @@ executor = ThreadPoolExecutor(max_workers=5)
 api_id = 26761696
 api_hash = 'b1ead8d774105f6b6eac78412d5988c5'
 phone_number = '+393387203564'
-chat_id = "290862891"  # Sostituisce con il tuo chat_id
+chat_id = "GiovanniReale"#"290862891"  # Sostituisce con il tuo chat_id
 
 print(api_id)
 print(api_hash)
@@ -185,7 +185,7 @@ def get_amazon_price(asin):
             price_element = soup.find('span', {'id': 'priceblock_dealprice'}) or soup.find('span', {
                 'id': 'priceblock_ourprice'})
             coupon_element = soup.find(string=lambda text: re.search(r'\d+% coupon', text.lower()) if text else False)
-
+            price = None
             if price_element:
                 # Estrai e converte il prezzo
                 price_text = price_element.get_text().strip()
@@ -196,13 +196,15 @@ def get_amazon_price(asin):
                 else:
                     raise ValueError("Prezzo non convertibile.")
             else:
-                full_price = soup.find('span', {'class': 'a-price-whole'}).text
-                price_decimal = soup.find('span', {'class': 'a-price-fraction'}).text
-                print(f"Prezzo trovato pre conversione alt: {full_price + price_decimal} €")
-                price = convert_to_float(full_price + price_decimal)
-                print(f"Prezzo trovato alt: {price:.2f} €")
-            if price is None:
-                raise ValueError("Prezzo non trovato.")
+                div_prezzo = soup.find('div', id='ppd')
+                if div_prezzo:
+                    full_price = div_prezzo.find('span', {'class': 'a-price-whole'}).text
+                    price_decimal = div_prezzo.find('span', {'class': 'a-price-fraction'}).text
+                    print(f"Prezzo trovato pre conversione alt: {full_price + price_decimal} €")
+                    price = convert_to_float(full_price + price_decimal)
+                    print(f"Prezzo trovato alt: {price:.2f} €")
+                if price is None:
+                    raise ValueError("Prezzo non trovato.")
 
             # Se è presente un coupon, applica lo sconto
             if coupon_element and price is not None:
@@ -370,7 +372,7 @@ async def update_price_if_lower_t(update_price, asin, new_price, text, brand, ca
     print(f"update_price_if_lower_t result per asin {asin} ({text}) : {result} e new price {new_price}")
     if result:
         current_price = result[0]
-        if new_price is not None and new_price != 'P':
+        if new_price is not None and new_price != 'P' and new_price != 'E' and new_price < current_price:
             print(f"update_price_if_lower_t asin trovato {asin}")
             cursor.execute(UPDATE_ASIN, (new_price if update_price else current_price, text, brand, category, asin))
             connection.commit()
@@ -380,8 +382,7 @@ async def update_price_if_lower_t(update_price, asin, new_price, text, brand, ca
             insert_price_history_t(asin, new_price)
             print(
                 f"Prezzo aggiornato per ASIN {asin}: {current_price} -> {new_price} - https://www.amazon.it/dp/{asin}")
-            await send_message_to_telegram(chat_id,
-                                           f"Prezzo aggiornato per ASIN {asin}: {current_price} -> {new_price} - https://www.amazon.it/dp/{asin}")
+            await send_message_to_telegram(chat_id, f"Prezzo aggiornato per ASIN {asin}: {current_price} -> {new_price} - https://www.amazon.it/dp/{asin}")
             #else:
             #print(f"Prezzo non aggiornato per ASIN {asin}: il nuovo prezzo {new_price} non è inferiore a {current_price}")
     else:
@@ -577,16 +578,16 @@ async def handler(event):
         print(f"Messaggio dal canale '{channel_name}' (id: {channel_id})")
         insert_channel(event.chat.username, channel_id)
         channel_enabled = get_channel_id(channel_id)
+        text_ = await find_and_expand_links(event.raw_text)
         if channel_enabled and channel_enabled == 1:
-            print(f"Testo : {find_and_expand_links(event.raw_text)}")
+            print(f"Testo : {text_}")
 
-        find_and_expand_links(event.raw_text)
         if event.buttons:
             for row in event.buttons:  # I pulsanti sono organizzati in righe
                 for button in row:
                     if isinstance(button.button, types.KeyboardButtonUrl):
                         url = button.button.url
-                        find_and_expand_links(url)
+                        await find_and_expand_links(url)
                         text = button.button.text
                         print(f"Pulsante: {text}, Link: {expand_url(url)}")
     else:
