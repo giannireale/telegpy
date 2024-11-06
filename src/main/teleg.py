@@ -14,6 +14,9 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from telethon.tl.types import Channel, Message, Chat
 from telethon.errors import UsernameInvalidError
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 WHERE_CHANNEL_ID_ = "SELECT enabled FROM channels WHERE channel_id = ?"
 
@@ -106,7 +109,7 @@ async def aggiorna_prezzo_asin_category():
         connection.execute('PRAGMA journal_mode=WAL;')
         cursor = connection.cursor()
         cursor.execute(
-            "SELECT asin FROM asin where category='Informatica'")  # Sostituisci con il nome della tua tabella
+            "SELECT asin FROM asin where category IN ('Informatica','Dispositivi Amazon & Accessori', 'Elettronica', 'Videogiochi', 'Categoria non trovata') order BY RANDOM()")  # Sostituisci con il nome della tua tabella
 
         # Itera sui risultati della query
         for row in cursor.fetchall():
@@ -176,8 +179,12 @@ async def get_amazon_price(asin):
 
             price_element = soup.find('span', {'id': 'priceblock_dealprice'}) or soup.find('span', {
                 'id': 'priceblock_ourprice'})
-            coupon_element = soup.find(string=lambda text: re.search(r'\d+% coupon', text.lower()) if text else False)
+            coupon_element = soup.find('span', {'class': "promoPriceBlockMessage"})
+            code_element = soup.find('div', {'id': 'reinvent_price_desktop_pickupOfferDisplay_Desktop'})
+            #print(coupon_element)
+            #print(code_element)
             price = None
+
             if price_element:
                 # Estrai e converte il prezzo
                 price_text = price_element.get_text().strip()
@@ -198,20 +205,70 @@ async def get_amazon_price(asin):
                 if price is None:
                     raise ValueError("Prezzo non trovato.")
 
+            code_match = None
+            discount_match = None
+            second_label = None
+            code_text = None
+            coupon_discount = None
+            code_discount = None
+
             # Se è presente un coupon, applica lo sconto
             if coupon_element and price is not None:
-                discount_match = re.search(r'(\d+)%', coupon_element)
-                if discount_match:
-                    discount_percentage = int(discount_match.group(1))
-                    discount_amount = price * (discount_percentage / 100)
-                    discounted_price = price - discount_amount
-                    price = discounted_price
-                    print(
-                        f"Coupon del {discount_percentage}% rilevato. Prezzo finale scontato: {discounted_price:.2f} €")
+                #print(coupon_element.find_all('label'))
+                labels = coupon_element.find_all('label')
+                if len(labels) >= 2:
+                    second_label = labels[1]  # Ricorda che gli indici in Python iniziano da 0
+                    #print(second_label.text)
+                    discount_match = re.search(r"(\d+(?:,\d+)*)[€%]", second_label.text)
+                    #print(discount_match)
                 else:
-                    print("Impossibile applicare il coupon.")
+                    second_label = None
             else:
                 print("Nessun coupon rilevato.")
+
+            if code_element and price is not None:
+                greenbadgepctch = code_element.find_all(id=re.compile(r"^greenBadgepctch"))
+                # Stampa gli elementi trovati
+                for element in greenbadgepctch:
+                    code_text = element.get_text().strip()
+                    code_match = re.search(r"(\d+(?:,\d+)*)[€%]", code_text)
+
+            if code_match:
+                if '€' in code_text:
+                    discount_amount = int(code_match.group(1))
+                    code_discount = discount_amount
+                    print(
+                        f"Codice di {discount_amount}€ rilevato.")
+                elif '%' in code_text:
+                    discount_percentage = int(code_match.group(1))
+                    discount_amount = price * (discount_percentage / 100)
+                    code_discount = discount_amount
+                    print(
+                        f"Codice del {discount_percentage}% rilevato.")
+            else:
+                print("Impossibile applicare il codice sconto.")
+
+            if discount_match:
+                if '€' in second_label.text:
+                    discount_amount = int(discount_match.group(1))
+                    coupon_discount = discount_amount
+                    print(
+                        f"Coupon di {discount_amount}€ rilevato.")
+                elif '%' in second_label.text:
+                    discount_percentage = int(discount_match.group(1))
+                    discount_amount = price * (discount_percentage / 100)
+                    coupon_discount = discount_amount
+                    print(
+                        f"Coupon del {discount_percentage}% rilevato.")
+            else:
+                print("Impossibile applicare il coupon.")
+
+            if code_discount:
+                price = price - code_discount
+            if coupon_discount:
+                price = price - coupon_discount
+
+            print(f"Prezzo finale scontato: {price:.2f} €")
 
             description = soup.find(id='productTitle')
             description_text = description.get_text(strip=True) if description else "Descrizione non trovata"
@@ -231,11 +288,12 @@ async def get_amazon_price(asin):
         except ValueError as e:
             print(f"Errore: {e}")
             return f"Errore: {e}"
-        except Exception as e:
+        except Exception:
             return "Prezzo non trovato o struttura HTML cambiata"
     else:
         print(f"Errore nella richiesta: {response.status_code}")
         return alternative_details(asin)
+
 
 
 # Esempio di inserimento di dati
@@ -257,11 +315,6 @@ def convert_to_float(price_text):
         return None
 
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
-
 async def get_minimum_price_selenium(asin):
     """
     Estrae il prezzo minimo storico da Keepa tramite Selenium.
@@ -274,14 +327,14 @@ async def get_minimum_price_selenium(asin):
     driver = init_driver()
     try:
 
-        url = f'https://keepa.com/#!product/1-{asin}'
+        url = f'https://keepa.com/#!product/8-{asin}'
         driver.get(url)
-
+        time.sleep(1)
         it_div = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, "//div[@id='currentLanguage']"))
         )
         it_div.click()
-        time.sleep(2)
+        time.sleep(1)
         # Attendi che il menu a tendina per la selezione del dominio sia caricato e visibile
         it_domain = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, "//span[@rel='domain' and @setting='4']"))
@@ -303,7 +356,7 @@ async def get_minimum_price_selenium(asin):
         # Simula il passaggio del mouse sopra l'elemento
         action = ActionChains(driver)
         action.move_to_element(hover_element).perform()
-        time.sleep(2)
+        time.sleep(1)
         # Find the first <tr> element
         tr_element = driver.find_element(By.XPATH,
                                          "//div[@id='statisticsContent']//table[@id='statsTable']//tbody//tr[2]")
@@ -319,7 +372,7 @@ async def get_minimum_price_selenium(asin):
         else:
             td2_text = td2_element.text
         print(td2_text.splitlines()[0])
-        return convert_to_float(td2_text.splitlines()[0])
+        return convert_to_float(td2_text.splitlines()[0].replace(",", ""))
     except Exception as e:
         print(f"Errore durante l'estrazione del prezzo: {e}")
         amazon_lowest_price = None
@@ -363,72 +416,240 @@ def init_driver():
     options.add_argument("--lang=it-IT")  # Imposta la lingua su italiano
     options.add_argument("--locale=it-IT")  # Imposta il locale su italiano
     options.add_argument(f"--accept-lang=it")
+    options.add_argument('--window-position=-32000,-32000')
+    options.add_argument('--start-minimized')  # Avvia minimizzato
     options.add_experimental_option('prefs', {'intl.accept_languages': f'it,it-IT'})
     service = Service('C:/driver/chromedriver.exe')
     # Inizializza il driver con il servizio
     driver = webdriver.Chrome(service=service, options=options)
+    driver.minimize_window()
     return driver
 
 
 async def get_asins_from_amazon_search():
     """Funzione per cercare prodotti su Amazon e catturare gli ASIN."""
-    search_term = "scheda+video+nvidia+amd+rtx+radeon+gaming+overclocked+economica+editing+video"  # Inserisci il termine di ricerca
-    category = "Informatica"  # Categoria opzionale
 
     driver = init_driver()  # Inizializza il browser
     driver.get("https://www.amazon.it/")  # Vai su Amazon Italia
     time.sleep(3)  # Attendi il caricamento della pagina
+    category = "Informatica"
+    search_terms = [
+        # Processori
+        "processore+amd+intel",
+        "processore+amd+ryzen",
+        "processore+intel+core+i7",
+        "processore+intel+core+i9",
+        "processore+amd+threadripper",
+        "processore+intel+xeon",
+        "processore+amd+ryzen+9+7900x",
+        "processore+intel+core+i9+13900k",
+        "processore+amd+epyc",
+        "processore+intel+xeon+w-3175x",
+        "processore+amd+ryzen+threadripper+3970x",
+        "processore+intel+core+i5",
+        "processore+amd+ryzen+5",
+        "processore+intel+core+i3",
+        "processore+amd+ryzen+3",
 
+        # Schede madri
+        "scheda+madre+am4",
+        "scheda+madre+am5",
+        "scheda+madre+LGA1700",
+        "scheda+madre+LGA1200",
+        "scheda+madre+micro-atx",
+        "scheda+madre+mini-itx",
+        "scheda+madre+amd+x670",
+        "scheda+madre+intel+z790",
+        "scheda+madre+amd+x570",
+        "scheda+madre+intel+z390",
+        "scheda+madre+amd+b550",
+        "scheda+madre+intel+b460",
+        "scheda+madre+amd+a520",
+        "scheda+madre+intel+h410",
+
+        # Schede video
+        "scheda+video+nvidia+amd+rtx+radeon+gaming+overclocked+economica+editing+video",
+        "scheda+video+gaming+economica",
+        "scheda+video+editing+video",
+        "scheda+video+nvidia+geforce",
+        "scheda+video+amd+radeon",
+        "scheda+video+rtx+3080",
+        "scheda+video+radeon+rx+6800+xt",
+        "scheda+video+rtx+4080",
+        "scheda+video+radeon+rx+7900+xtx",
+        "scheda+video+nvidia+geforce+rtx+4090",
+        "scheda+video+amd+radeon+rx+7900+xt",
+        "scheda+video+nvidia+geforce+gtx+1660+super",
+        "scheda+video+amd+radeon+rx+5600+xt",
+        "scheda+video+nvidia+geforce+rtx+3070",
+        "scheda+video+amd+radeon+rx+6700+xt",
+
+        # Memorie RAM
+        "memoria+ram+16gb",
+        "memoria+ram+32gb",
+        "memoria+ram+64gb",
+        "memoria+ram+ddr4",
+        "memoria+ram+ddr5",
+        "memoria+ram+2133mhz",
+        "memoria+ram+3200mhz",
+        "memoria+ram+4800mhz",
+        "memoria+ram+6400mhz",
+        "memoria+ram+128gb",
+        "memoria+ram+256gb",
+        "memoria+ram+ecc",
+        "memoria+ram+non-ecc",
+        "memoria+ram+registered",
+        "memoria+ram+unbuffered",
+
+        # Dispositivi di archiviazione
+        "disco+rigido+1tb",
+        "disco+rigido+2tb",
+        "disco+rigido+ssd",
+        "disco+rigido+hdd",
+        "dispositivo+di+archiviazione+esterno",
+        "dispositivo+di+archiviazione+portatile",
+        "disco+rigido+nvme",
+        "disco+rigido+m.2",
+        "disco+rigido+sata",
+        "disco+rigido+pci-e",
+        "disco+rigido+usb",
+        "disco+rigido+firewire",
+        "disco+rigido+thunderbolt",
+        "disco+rigido+raid",
+
+        # Alimentatori
+        "alimentatore+650w",
+        "alimentatore+850w",
+        "alimentatore+1000w",
+        "alimentatore+modulare",
+        "alimentatore+non+modulare",
+        "alimentatore+80+plus+gold",
+        "alimentatore+80+plus+platinum",
+        "alimentatore+80+plus+titanium",
+        "alimentatore+1600w",
+        "alimentatore+2000w",
+        "alimentatore+2500w",
+        "alimentatore+3000w",
+        "alimentatore+redundante",
+        "alimentatore+hot-swap",
+        "alimentatore+alta+efficienza",
+        "alimentatore+bassa+rumorosità",
+
+        # Case
+        "case+mid+tower",
+        "case+full+tower",
+        "case+mini+tower",
+        "case+micro-atx",
+        "case+mini-itx",
+        "case+temperato+vetro",
+        "case+con+ventola",
+        "case+rgb",
+        "case+con+schermo",
+        "case+alluminio",
+        "case+acciaio",
+        "case+vetro+temperato",
+        "case+con+porte+usb",
+        "case+con+porte+hdmi",
+        "case+con+porte+displayport",
+        "case+con+porte+audio",
+        "case+con+porte+microfono",
+
+        # Ventole e dissipatori
+        "ventola+120mm",
+        "ventola+140mm",
+        "ventola+200mm",
+        "dissipatore+liquido",
+        "dissipatore+ad+aria",
+        "ventola+silenziosa",
+        "ventola+con+led",
+        "ventola+rgb",
+        "dissipatore+custom",
+        "dissipatore+all-in-one",
+        "ventola+da+caso",
+        "ventola+da+processore",
+        "ventola+da+scheda+video",
+        "ventola+da+memoria+ram",
+        "ventola+da+dispositivo+di+archiviazione",
+
+        # Periferiche
+        "tastiera+meccanica",
+        "tastiera+wireless",
+        "mouse+ottico",
+        "mouse+wireless",
+        "cuffie+gaming",
+        "cuffie+wireless",
+        "webcam+hd",
+        "webcam+full+hd",
+        "microfono+usb",
+        "microfono+wireless",
+        "altoparlanti+2.0",
+        "altoparlanti+2.1",
+        "altoparlanti+5.1",
+        "altoparlanti+7.1",
+        "tastiera+con+retroilluminazione",
+        "mouse+con+led",
+        "cuffie+con+microfono",
+        "webcam+con+microfono",
+        "microfono+con+led",
+        "altoparlanti+con+led",
+    ]
     try:
-        # Seleziona la categoria (opzionale)
-        if category:
-            category_dropdown = driver.find_element(By.ID, 'searchDropdownBox')  # Dropdown delle categorie
-            category_dropdown.send_keys(category)  # Seleziona la categoria
-
-        # Invia la ricerca nel campo di ricerca
-        search_box = driver.find_element(By.ID, "twotabsearchtextbox")
-        search_box.send_keys(search_term)
-        search_box.send_keys(Keys.RETURN)
-
-        time.sleep(2)  # Attendi il caricamento della pagina dei risultati
-
-        # Recupera tutti gli elementi nella pagina con attributo ASIN
-        while True:
-            asins = set()  # Usare un set per evitare duplicati
-            product_elements = driver.find_elements(By.XPATH, "//div[@data-asin]")
-
-            # Estrai i valori del data-asin
-            for product_element in product_elements:
-                asin = product_element.get_attribute("data-asin")
-                if asin:  # Controlla che asin non sia una stringa vuota
-                    asins.add(asin)
-
-            print(f"Trovati {len(asins)} ASINs:")
-            for asin in asins:
-                try:
-                    print(f"\t{asin}")
-                    product_detail = await get_amazon_price(asin)  # Simula l'ottenimento del prezzo di un prodotto
-                    if isinstance(product_detail[0], (float, int)) and isinstance(product_detail[1], str):
-                        await insert_asin_thread(asin, product_detail[0], product_detail[1], product_detail[2],
-                                                 product_detail[3])
-                except Exception as e:
-                    print(f"Errore durante il recupero dei dettagli dell'ASIN {asin}: {e}")
-
-            # Controlla se c'è una pagina successiva
+        for search_term in search_terms:
             try:
-                next_button = driver.find_element(By.CLASS_NAME, "s-pagination-next")
-                if "s-pagination-disabled" in next_button.get_attribute("class"):
-                    print("Paginazione conclusa.")
-                    break
-                else:
-                    next_button.click()  # Vai alla pagina successiva
-                    time.sleep(2)  # Attendi il caricamento della pagina successiva
+                # Seleziona la categoria (opzionale)
+                if category:
+                    category_dropdown = driver.find_element(By.ID, 'searchDropdownBox')  # Dropdown delle categorie
+                    category_dropdown.send_keys(category)  # Seleziona la categoria
+
+                # Invia la ricerca nel campo di ricerca
+                search_box = driver.find_element(By.ID, "twotabsearchtextbox")
+                search_box.clear()  # Pulisci il campo di ricerca
+                search_box.send_keys(search_term)
+                search_box.send_keys(Keys.RETURN)
+
+                time.sleep(2)  # Attendi il caricamento della pagina dei risultati
+
+                # Recupera tutti gli elementi nella pagina con attributo ASIN
+                while True:
+                    asins = set()  # Usare un set per evitare duplicati
+                    product_elements = driver.find_elements(By.XPATH, "//div[@data-asin]")
+
+                    # Estrai i valori del data-asin
+                    for product_element in product_elements:
+                        asin = product_element.get_attribute("data-asin")
+                        if asin:  # Controlla che asin non sia una stringa vuota
+                            asins.add(asin)
+
+                    print(f"Trovati {len(asins)} ASINs per '{search_term}':")
+                    for asin in asins:
+                        try:
+                            print(f"\t{asin}")
+                            product_detail = await get_amazon_price(
+                                asin)  # Simula l'ottenimento del prezzo di un prodotto
+                            if isinstance(product_detail[0], (float, int)) and isinstance(product_detail[1], str):
+                                await insert_asin_thread(asin, product_detail[1], product_detail[0], product_detail[2],
+                                                         product_detail[3])
+                        except Exception as e:
+                            print(f"Errore durante il recupero dei dettagli dell'ASIN {asin}: {e}")
+
+                    # Controlla se c'è una pagina successiva
+                    try:
+                        next_button = driver.find_element(By.CLASS_NAME, "s-pagination-next")
+                        if "s-pagination-disabled" in next_button.get_attribute("class"):
+                            print("Paginazione conclusa.")
+                            break
+                        else:
+                            next_button.click()  # Vai alla pagina successiva
+                            time.sleep(2)  # Attendi il caricamento della pagina successiva
+                    except Exception as e:
+                        print(f"Errore nel navigare alla pagina successiva: {e}")
+                        break
+
             except Exception as e:
-                print(f"Errore nel navigare alla pagina successiva: {e}")
-                break
+                print(f"Errore nel recuperare i prodotti per '{search_term}': {e}")
 
     except Exception as e:
-        print(f"Errore nel recuperare i prodotti: {e}")
+        print(f"Errore generale: {e}")
     finally:
         driver.quit()  # Chiudi il browser
 
@@ -441,12 +662,16 @@ async def update_price_if_lower_t(update_price, asin, new_price, text, brand, ca
     cursor = connection.cursor()
     cursor.execute(ASIN_, (asin,))
     result = cursor.fetchone()
-    print(f"update_price_if_lower_t result per asin {asin} ({text}) : {result} e new price {new_price}")
+
     if result:
         current_price = result[0]
         minimun_price = await get_minimum_price_selenium(asin)
-        if new_price is not None and new_price != 'P' and new_price != 'E' and new_price < current_price or (
-                minimun_price and new_price != 'P' and new_price != 'E' and new_price <= minimun_price):
+        print(
+            f"update_price_if_lower_t result per asin {asin} ({text}) : {result} e new price {new_price} - minimun_price {minimun_price}")
+
+        # Verifica se il nuovo prezzo è un numero e se è minore o uguale al prezzo attuale o al prezzo minimo
+        if isinstance(new_price, (int, float)) and (
+                new_price < current_price or (minimun_price and new_price <= minimun_price)):
             print(f"update_price_if_lower_t asin trovato {asin}")
             cursor.execute(UPDATE_ASIN, (new_price if update_price else current_price, text, brand, category, asin))
             connection.commit()
@@ -458,8 +683,9 @@ async def update_price_if_lower_t(update_price, asin, new_price, text, brand, ca
                 f"Prezzo aggiornato per ASIN {asin}: {current_price} -> {new_price} - https://www.amazon.it/dp/{asin}")
             await send_message_to_telegram(chat_id,
                                            f"Prezzo aggiornato per ASIN {asin}: {current_price} -> {new_price} - https://www.amazon.it/dp/{asin}")
-            #else:
-            #print(f"Prezzo non aggiornato per ASIN {asin}: il nuovo prezzo {new_price} non è inferiore a {current_price}")
+        else:
+            print(
+                f"Prezzo non aggiornato per ASIN {asin}: il nuovo prezzo {new_price} non è inferiore a {current_price} o {minimun_price} o non è un numero")
     else:
         print(f"ASIN {asin} non trovato nel database")
 
@@ -493,7 +719,10 @@ async def insert_asin_thread(asin, product_name, price, brand, category):
     if isinstance(price, str):
         price = 10000000000
     print("insert_asin_thread")
-    cursor.execute(INSERT_ASIN, (asin, product_name, price, brand, category))
+    try:
+        cursor.execute(INSERT_ASIN, (asin, product_name, price, brand, category))
+    except Exception as e:
+        print(f"Errore: {e}")
     connection.commit()
     cursor.close()
     connection.close()
@@ -794,10 +1023,13 @@ client_bot.start()
 #executor.submit(aggiorna_prezzo_asin)
 async def main():
     print(f"Running main loop")
-    await asyncio.gather(read_all_channels_recovery()
-                         , aggiorna_prezzo_asin_category()
-                         , get_asins_from_amazon_search()
-                         )
+    await asyncio.gather(
+        #read_all_channels_recovery()
+        #                     ,
+        #aggiorna_prezzo_asin_category()
+        #    ,
+        get_asins_from_amazon_search()
+    )
 
 
 client.loop.run_until_complete(main())
