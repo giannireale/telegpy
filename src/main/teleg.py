@@ -3,6 +3,7 @@ import os
 import re
 import sqlite3
 import requests
+from fake_useragent import UserAgent
 from selenium.webdriver import Keys, ActionChains
 from telethon import TelegramClient, events, types
 from urllib.parse import urlparse
@@ -12,17 +13,20 @@ from selenium.webdriver.chrome.service import Service
 import time
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-from telethon.tl.types import Channel, Message, Chat
+from telethon.tl.types import Channel, Message, Chat, TextUrl
 from telethon.errors import UsernameInvalidError
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from urllib3.util import Url
 
 WHERE_CHANNEL_ID_ = "SELECT enabled FROM channels WHERE channel_id = ?"
 
 WHERE_CHANNEL_ID_MESSAGE = "SELECT channel_name FROM channels WHERE message_recovery = 1"
 
 INSERT_ASIN = 'INSERT OR IGNORE INTO asin (asin, product_name, price, brand, category) VALUES (?, ?, ?, ?, ?)'
+
+INSERT_ASIN_TO_CHECK = 'INSERT OR IGNORE INTO asin_to_check (asin) VALUES (?)'
 
 UPDATE_ASIN = "UPDATE asin SET price = ?, product_name = ?, brand = ?, category = ? WHERE asin = ?"
 
@@ -77,12 +81,19 @@ c.execute('''
     )
 ''')
 
+c.execute('''
+    CREATE TABLE IF NOT EXISTS asin_to_check (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asin TEXT NOT NULL UNIQUE
+    )
+''')
+
 conn.commit()
 
 #loop = asyncio.get_event_loop()
 client = TelegramClient('session_name', api_id, api_hash, )
-client_bot = TelegramClient('bot', api_id, api_hash).start(
-    bot_token='8054132307:AAECeEAArzTnvOY2SmkJhOWlcaSlWd00ZoU')
+#client_bot = TelegramClient('bot', api_id, api_hash).start(
+    #bot_token='8054132307:AAECeEAArzTnvOY2SmkJhOWlcaSlWd00ZoU')
 
 
 async def aggiorna_prezzo_asin():
@@ -291,9 +302,8 @@ async def get_amazon_price(asin):
         except Exception:
             return "Prezzo non trovato o struttura HTML cambiata"
     else:
-        print(f"Errore nella richiesta: {response.status_code}")
+        print(f"Errore nella richiesta: {response.status_code} - {url}")
         return alternative_details(asin)
-
 
 
 # Esempio di inserimento di dati
@@ -399,9 +409,9 @@ async def update_price_if_lower(asin, new_price, product_title, brand, category)
             insert_price_history(asin, new_price)
             conn.commit()
             print(
-                f"Prezzo aggiornato per ASIN {asin}: {current_price} -> {new_price} - https://www.amazon.it/dp/{asin}")
+                f"Prezzo aggiornato per ASIN {asin}: {current_price} -> {new_price} - https://www.amazon.it/dp/{asin} - Minimo storico : {minimun_price}")
 
-            message = f"Prezzo aggiornato per ASIN {asin}: {new_price:.2f} € - {product_title}  https://www.amazon.it/dp/{asin}"
+            message = f"Prezzo aggiornato per ASIN {asin}: {new_price:.2f} € - {product_title}  https://www.amazon.it/dp/{asin} - Minimo storico : {minimun_price}"
             await send_message_to_telegram(chat_id, message)
         #else:
         #print(f"Prezzo non aggiornato per ASIN {asin}: il nuovo prezzo {new_price} non è inferiore a {current_price}")
@@ -409,19 +419,33 @@ async def update_price_if_lower(asin, new_price, product_title, brand, category)
         print(f"ASIN {asin} non trovato nel database")
 
 
-# Funzione per inizializzare il webdriver
 def init_driver():
     os.environ["LANG"] = "it_IT.UTF-8"
     options = webdriver.ChromeOptions()
     options.add_argument("--lang=it-IT")  # Imposta la lingua su italiano
     options.add_argument("--locale=it-IT")  # Imposta il locale su italiano
     options.add_argument(f"--accept-lang=it")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--no-sandbox")
     options.add_argument('--window-position=-32000,-32000')
     options.add_argument('--start-minimized')  # Avvia minimizzato
     options.add_experimental_option('prefs', {'intl.accept_languages': f'it,it-IT'})
     service = Service('C:/driver/chromedriver.exe')
     # Inizializza il driver con il servizio
+    ua = UserAgent()
+    user_agent = ua.random
+    options = webdriver.ChromeOptions()
+    options.add_argument(f'user-agent={user_agent}')
     driver = webdriver.Chrome(service=service, options=options)
+    driver.execute_script("""
+    Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined
+    })
+    """)
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     driver.minimize_window()
     return driver
 
@@ -728,9 +752,29 @@ async def insert_asin_thread(asin, product_name, price, brand, category):
     connection.close()
 
 
+async def insert_asin_to_check(asin):
+    #price_history = get_price_history(asin)
+    connection = sqlite3.connect('channels.db', timeout=10)
+    connection.execute('PRAGMA journal_mode=WAL;')
+
+    cursor = connection.cursor()
+    #if price_history:
+    # print("Storico Prezzi:")
+    # for entry in price_history:
+    #    print(f"Data: {entry['date']}, Prezzo: {entry['price']}")
+    print(f"insert_asin_to_check {asin}")
+    try:
+        cursor.execute(INSERT_ASIN_TO_CHECK, [asin])
+    except Exception as e:
+        print(f"Errore: {e}")
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+
 def alternative_details(asin):
     # URL del prodotto Amazon in base all'ASIN
-    url = "https://www.amazon.it/gp/aws/cart/add-res.html?ASIN.1={asin}&Quantity.1=1"
+    url = f"https://www.amazon.it/gp/aws/cart/add-res.html?ASIN.1={asin}&Quantity.1=1"
 
     # Headers per simulare una richiesta da un browser (evita il blocco di bot)
     headers = {
@@ -758,7 +802,7 @@ def alternative_details(asin):
         except Exception as e:
             return "Prezzo non trovato o struttura HTML cambiata"
     else:
-        return f"Errore nella richiesta: {response.status_code}"
+        return f"Errore nella richiesta: {response.status_code} - {url}"
 
 
 async def find_and_expand_links(text):
@@ -766,22 +810,23 @@ async def find_and_expand_links(text):
     short_urls = find_links(text)
     # Dizionario per mappare URL corto -> URL espanso
     url_mapping = {url: expand_url(url) for url in short_urls}
-
+    print(short_urls)
     # Sostituisce ogni URL corto con quello espanso nel testo
     for short_url, expanded_url in url_mapping.items():
         asin = extract_asin(expanded_url)
-        product_detail = await get_amazon_price(asin)
+        if asin is not None:
+            product_detail = await get_amazon_price(asin)
 
-        if not isinstance(product_detail, list):
-            product_detail = alternative_details(asin)
+            if not isinstance(product_detail, list):
+                product_detail = alternative_details(asin)
 
-        print(product_detail)
-        if isinstance(product_detail[0], float) and isinstance(product_detail[1], str):
-            insert_asin(asin, product_detail[0], product_detail[1], product_detail[2], product_detail[3])
-            await update_price_if_lower(asin, product_detail[0], product_detail[1], product_detail[2],
-                                        product_detail[3])
-        #add_to_chart(asin)
-        text = text.replace(short_url, expanded_url)
+            print(product_detail)
+            if isinstance(product_detail[0], float) and isinstance(product_detail[1], str):
+                insert_asin(asin, product_detail[0], product_detail[1], product_detail[2], product_detail[3])
+                await update_price_if_lower(asin, product_detail[0], product_detail[1], product_detail[2],
+                                            product_detail[3])
+            #add_to_chart(asin)
+            text = text.replace(short_url, expanded_url)
 
     return text
 
@@ -789,7 +834,7 @@ async def find_and_expand_links(text):
 async def find_and_expand_links_t(text):
     # Trova tutti i link nel testo
     short_urls = find_links(text)
-    #print(short_urls)
+    print(short_urls)
     # Dizionario per mappare URL corto -> URL espanso
     url_mapping = {url: expand_url(url) for url in short_urls}
     #print(url_mapping)
@@ -853,7 +898,7 @@ def extract_asin(url):
 
     # Regex pattern per trovare l'ASIN
     # Cerca uno di questi formati: '/dp/ASIN', '/gp/product/ASIN', '/product/ASIN'
-    asin_pattern = r'/dp/([A-Z0-9]{10})|/gp/product/([A-Z0-9]{10})|/product/([A-Z0-9]{10})'
+    asin_pattern = r'/dp/([A-Z0-9]{10})|/gp/product/([A-Z0-9]{10})|/product/([A-Z0-9]{10})|/([A-Z0-9]{10})(?=[/?])'
 
     # Cerca il pattern nel percorso dell'URL
     match = re.search(asin_pattern, parsed_url.path)
@@ -870,22 +915,31 @@ def extract_asin(url):
 async def handler(event):
     global file
     if event.is_channel:
-        if event.message.media:
+        #if event.message.media:
             # Controlla se l'immagine è un tipo di file supportato
-            if hasattr(event.message.media, 'photo'):
+            #if hasattr(event.message.media, 'photo'):
                 # Scarica l'immagine
-                file = await event.message.download_media(file='downloaded_images/')
-                print(f"Immagine scaricata: {file}")  # Controlla se il messaggio proviene da un canale
+                #file = await event.message.download_media(file='downloaded_images/')
+                #print(f"Immagine scaricata: {file}")  # Controlla se il messaggio proviene da un canale
+        entities = event.message.entities
+        if entities:
+            for entity in entities:
+                # Verifica se l'entità è un URL
+                if isinstance(entity, TextUrl) or isinstance(entity, Url):
+                    offset = entity.offset
+                    length = entity.length
+                    url = event.message.text[offset:offset + length]
+                    print(f"Link trovato: {url}")
         channel = await event.get_chat()  # Ottiene le informazioni del canale
         channel_name = channel.title if channel.title else "Sconosciuto"
         channel_id = event.chat_id
         print(f"Messaggio dal canale '{channel_name}' (id: {channel_id})")
         insert_channel(event.chat.username, channel_id)
         channel_enabled = get_channel_id(channel_id)
-        text_ = await find_and_expand_links(event.raw_text)
-        if channel_enabled and channel_enabled == 1:
-            print(f"Testo : {text_}")
 
+        if channel_enabled and channel_enabled == 1:
+            text_ = await find_and_expand_links(event.message.text)
+            print(f"Testo : {text_}")
         if event.buttons:
             for row in event.buttons:  # I pulsanti sono organizzati in righe
                 for button in row:
@@ -897,7 +951,14 @@ async def handler(event):
     else:
         sender = await event.get_sender()
         sender_name = sender.first_name if sender.first_name else "Sconosciuto"
-        print(f"Messaggio da {sender_name}: {event.raw_text}")
+        print(f"Messaggio da {sender_name}: {event.raw_text} ({event.chat_id})")
+        channel_enabled = get_channel_id(event.chat_id)
+        if channel_enabled and channel_enabled == 1:
+            text_ = await find_and_expand_links(event.raw_text)
+            print(f"Testo : {text_}")
+        if sender_name == 'G' and event.raw_text.startswith('add'):
+            await insert_asin_thread(extract_asin(event.raw_text), 'placeholder', 10000, 'placeholder', 'placeholder')
+            await insert_asin_to_check(extract_asin(event.raw_text))
     print(f"---------------------------------------------------------------------------------------------")
 
 
@@ -990,7 +1051,7 @@ async def fetch_entity(channel_username):
         print(f"An unexpected error occurred: {e}")
 
 
-@client_bot.on(events.NewMessage)
+#@client_bot.on(events.NewMessage)
 async def handler_bot(event):
     sender = await event.get_sender()
     chat_id = event.message.chat_id
@@ -1006,7 +1067,7 @@ async def send_message_to_telegram(c_id, message):
 
 
 client.start(phone_number)
-client_bot.start()
+#client_bot.start()
 
 
 #8054132307:AAECeEAArzTnvOY2SmkJhOWlcaSlWd00ZoU
@@ -1028,13 +1089,13 @@ async def main():
         #                     ,
         #aggiorna_prezzo_asin_category()
         #    ,
-        get_asins_from_amazon_search()
+        #get_asins_from_amazon_search()
     )
 
 
 client.loop.run_until_complete(main())
 client.run_until_disconnected()
-client_bot.run_until_disconnected()
+#client_bot.run_until_disconnected()
 #executor.submit(get_asins_from_amazon_search)
 #executor.submit(infinite_asin_search)
 #create_graph()

@@ -8,6 +8,7 @@ from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
+from fake_useragent import UserAgent
 from selenium import webdriver
 from selenium.webdriver import ActionChains
 from selenium.webdriver.chrome.service import Service
@@ -48,6 +49,7 @@ async def get_amazon_price(asin):
     }
 
     # Effettua la richiesta HTTP
+    print(url)
     response = requests.get(url, headers=headers)
 
     if response.status_code == 200:
@@ -175,7 +177,7 @@ async def get_amazon_price(asin):
         except Exception:
             return "Prezzo non trovato o struttura HTML cambiata"
     else:
-        print(f"Errore nella richiesta: {response.status_code}")
+        print(f"Errore nella richiesta: {url} - {response.status_code}")
         return None
 
 
@@ -203,13 +205,28 @@ def init_driver():
     options.add_argument("--lang=it-IT")  # Imposta la lingua su italiano
     options.add_argument("--locale=it-IT")  # Imposta il locale su italiano
     options.add_argument(f"--accept-lang=it")
-    options.add_argument('--window-position=-32000,-32000')
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--no-sandbox")
+    #options.add_argument('--window-position=-32000,-32000')
     options.add_argument('--start-minimized')  # Avvia minimizzato
     options.add_experimental_option('prefs', {'intl.accept_languages': f'it,it-IT'})
     service = Service('C:/driver/chromedriver.exe')
     # Inizializza il driver con il servizio
+    ua = UserAgent()
+    user_agent = ua.random
+    options = webdriver.ChromeOptions()
+    options.add_argument(f'user-agent={user_agent}')
     driver = webdriver.Chrome(service=service, options=options)
-    driver.minimize_window()
+    driver.execute_script("""
+    Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined
+    })
+    """)
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    #driver.minimize_window()
     return driver
 
 

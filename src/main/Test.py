@@ -1,8 +1,11 @@
 import asyncio
 import re
+import threading
 
+import aiohttp
 import requests
 from bs4 import BeautifulSoup
+from fake_useragent import UserAgent
 
 
 def convert_to_float(price_text):
@@ -25,17 +28,20 @@ async def get_amazon_price(asin):
 
     # Headers per simulare una richiesta da un browser (evita il blocco di bot)
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/58.0.3029.110 Safari/537.3"
+        "User-Agent": UserAgent().random,
+        "Accept-Encoding": "gzip, deflate"
     }
 
     # Effettua la richiesta HTTP
-    response = requests.get(url, headers=headers)
-
-    if response.status_code == 200:
+    print(url)
+    #session = requests.Session()
+    #response = session.get(url, headers=headers, stream=True)
+    response = await fetch(url, headers)
+    #response = requests.get(url, headers=headers, stream=True)
+    #if response.status_code == 200:
+    if response:
         # Parsing della pagina HTML
-        soup = BeautifulSoup(response.content, 'html.parser')
-
+        soup = BeautifulSoup(response, 'html.parser')
         # Prova a trovare il prezzo del prodotto
         try:
             # Questa classe può variare, quindi è necessario controllare il codice sorgente HTML della pagina
@@ -65,7 +71,6 @@ async def get_amazon_price(asin):
                 if div_prezzo:
                     full_price = div_prezzo.find('span', {'class': 'a-price-whole'}).text
                     price_decimal = div_prezzo.find('span', {'class': 'a-price-fraction'}).text
-                    print(f"Prezzo trovato pre conversione alt: {full_price + price_decimal} €")
                     price = convert_to_float(full_price + price_decimal)
                     print(f"Prezzo trovato alt: {price:.2f} €")
                 if price is None:
@@ -135,16 +140,24 @@ async def get_amazon_price(asin):
                 price = price - coupon_discount
 
             print(f"Prezzo finale scontato: {price:.2f} €")
-
-            description = soup.find(id='productTitle')
-            description_text = description.get_text(strip=True) if description else "Descrizione non trovata"
+            description = soup.find('span', {'id': 'productTitle'})
+            description_text = description.get_text(strip=True)
+            if description_text is None:
+                print("rileggo pagina web description")
+                await get_amazon_price(asin)
 
             brand = soup.select_one('a#bylineInfo')
-            brand = brand.text.strip() if brand else 'Marca non trovata'
+            brand = brand.text.strip()
+            if brand is None:
+                print("rileggo pagina web brand vuoto")
+                await get_amazon_price(asin)
 
             # Estrai la categoria
             category = soup.select_one('a.a-link-normal.a-color-tertiary')
-            category = category.text.strip() if category else 'Categoria non trovata'
+            category = category.text.strip()
+            if brand is None:
+                print("rileggo pagina web category vuoto")
+                await get_amazon_price(asin)
             print(f"Fine metodo get details {[price, description_text, brand, category]}")
             return [price, description_text, brand, category]
 
@@ -157,8 +170,34 @@ async def get_amazon_price(asin):
         except Exception:
             return "Prezzo non trovato o struttura HTML cambiata"
     else:
-        print(f"Errore nella richiesta: {response.status_code}")
+        print(f"Errore nella richiesta: {url} - {response.status_code}")
         return None
 
 
-asyncio.run(get_amazon_price('B0CWQ7TK7Q'))
+async def fetch(url, headers):
+    for _ in range(3):  # Retry up to 3 times
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=10) as response:
+                    return await response.text()
+        except aiohttp.client_exceptions.ClientConnectionError as e:
+            print(f"Connection error: {e}, retrying...")
+            await asyncio.sleep(2)  # Wait 2 seconds before retrying
+    raise  # Re-raise the exception if all retries fail
+
+def synced_amazon():
+    asyncio.run(get_amazon_price(f"B0CNH1NQLG"))
+
+#asyncio.run(get_amazon_price('B0BRR2R8HH'))
+
+threads = []
+
+# Invoca il metodo in thread separati con diversi nomi e ritardi
+while True:
+    thread = threading.Thread(target=synced_amazon, args=())
+    threads.append(thread)
+    thread.start()
+
+# Attendi che tutti i thread siano completati
+    for thread in threads:
+        thread.join()

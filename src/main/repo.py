@@ -1,3 +1,6 @@
+from matplotlib import pyplot as plt
+
+
 def add_to_chart(asin):
     # Configura il WebDriver (ad esempio, ChromeDriver)
     service = Service('C:/driver/chromedriver.exe')
@@ -126,7 +129,9 @@ def create_graph():
 
     # Mostra il grafico
     plt.tight_layout()
-    plt.show()
+    plt.savefig('/downloaded_images/sinusoidal_graph.png', dpi=300)
+    plt.close()
+    #plt.show()
 
 
 def extract_prices(text):
