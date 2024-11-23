@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import sqlite3
@@ -12,8 +13,29 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from telethon import TelegramClient
 
 DB_NAME = 'channels.db'
+api_id = 26761696
+api_hash = 'b1ead8d774105f6b6eac78412d5988c5'
+phone_number = '+393387203564'
+chat_id = "GiovanniReale"  #"290862891"  # Sostituisce con il tuo chat_id
+
+print(api_id)
+print(api_hash)
+print(phone_number)
+
+
+async def send_message_to_telegram(c_id, message):
+    try:
+        client = TelegramClient('session_name2', api_id, api_hash, )
+        await client.start(phone_number)
+        await client.send_message(c_id, message)
+        print("msg inviato")
+        await client.disconnect()
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
 
 
 def get_connection():
@@ -161,13 +183,13 @@ def init_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--no-sandbox")
-    #options.add_argument('--window-position=-32000,-32000')
-    #options.add_argument('--start-minimized')  # Avvia minimizzato
+    options.add_argument('--window-position=-32000,-32000')
+    options.add_argument('--start-minimized')  # Avvia minimizzato
     options.add_experimental_option('prefs', {'intl.accept_languages': f'it,it-IT'})
     service = Service('C:/driver/chromedriver.exe')
     # Inizializza il driver con il servizio
     ua = UserAgent()
-    user_agent = ua.random
+    user_agent = ua.chrome
     options = webdriver.ChromeOptions()
     options.add_argument(f'user-agent={user_agent}')
     driver_new = webdriver.Chrome(service=service, options=options)
@@ -178,6 +200,27 @@ def init_driver():
     """)
     return driver_new
 
+
+def check_words_in_text(search_string, text):
+    """
+    Verifica se una qualsiasi parola della stringa di ricerca è contenuta nel testo.
+
+    :param search_string: La stringa contenente le parole da cercare.
+    :param text: Il testo in cui cercare le parole.
+    :return: True se almeno una parola della stringa di ricerca è presente nel testo, False altrimenti.
+    """
+    # Suddividi la stringa di ricerca in parole
+    search_words = search_string.split()
+
+    # Suddividi il testo in parole
+    text_words = text.split()
+
+    # Verifica se almeno una parola della stringa di ricerca è presente nel testo
+    for word in search_words:
+        if word in text_words:
+            return True
+
+    return False
 
 def convert_to_float(price_text):
     """
@@ -195,176 +238,126 @@ def convert_to_float(price_text):
 
 nintendo_switch_games_keywords = [
     "Nintendo Switch OLED",
-    "Nintendo Switch OLED usata",
-    "Nintendo Switch OLED nuova",
-    "Nintendo Switch OLED in scatola",
-    "Nintendo Switch OLED con giochi",
-    "Nintendo Switch OLED bundle",
-    "Nintendo Switch OLED a buon prezzo",
-    "Nintendo Switch OLED offerta",
-    "Nintendo Switch OLED accessori",
-    "Nintendo Switch OLED controller",
-    "Nintendo Switch OLED dock",
-    "Nintendo Switch OLED custodia",
-    "Nintendo Switch OLED caricabatterie",
-    "Nintendo Switch OLED power bank",
-    "Nintendo Switch OLED memory card",
-    "Nintendo Switch OLED joystick",
-    "Nintendo Switch OLED grips",
-    "Nintendo Switch OLED adattatore",
-    "Nintendo Switch OLED cavo HDMI",
-    "Nintendo Switch OLED joy-con",
+    #"Nintendo Switch OLED usata",
+    #"Nintendo Switch OLED nuova",
+     #"Nintendo Switch OLED in scatola",
+    #"Nintendo Switch OLED con giochi",
+    #"Nintendo Switch OLED bundle",
+    #"Nintendo Switch OLED a buon prezzo",
+    #"Nintendo Switch OLED offerta",
+  #  "Nintendo Switch OLED accessori",
+  #  "Nintendo Switch OLED controller",
+  #  "Nintendo Switch OLED dock",
+   # "Nintendo Switch OLED custodia",
+    #"Nintendo Switch OLED caricabatterie",
+   # "Nintendo Switch OLED power bank",
+    #"Nintendo Switch OLED memory card",
+    #"Nintendo Switch OLED joystick",
+    #"Nintendo Switch OLED grips",
+    #"Nintendo Switch OLED adattatore",
+    #"Nintendo Switch OLED cavo HDMI",
+    #"Nintendo Switch OLED joy-con",
     "Nintendo Switch OLED giochi",
-    "Nintendo Switch OLED Mario Kart",
-    "Nintendo Switch OLED Zelda",
-    "Nintendo Switch OLED Animal Crossing",
-    "Nintendo Switch OLED Super Smash Bros",
-    "Nintendo Switch OLED Pokémon",
-    "Nintendo Switch OLED Splatoon",
-    "Nintendo Switch OLED Minecraft",
-    "Nintendo Switch OLED Fortnite",
-    "Nintendo Switch OLED FIFA",
-    "Nintendo Switch OLED giochi usati",
-    "Nintendo Switch OLED giochi nuovi",
-    "Nintendo Switch OLED giochi in scatola",
-    "Nintendo Switch OLED giochi a buon prezzo",
-    "Nintendo Switch OLED giochi offerta",
-    "Nintendo Switch OLED giochi bundle",
-    "Nintendo Switch OLED giochi multiplayer",
-    "Nintendo Switch OLED giochi single player",
-    "Nintendo Switch OLED giochi RPG",
-    "Nintendo Switch OLED giochi avventura",
-    "Nintendo Switch OLED giochi sport",
-    "Nintendo Switch OLED giochi azione",
-    "Nintendo Switch OLED giochi strategia",
-    "Nintendo Switch OLED giochi puzzle",
-    "Nintendo Switch OLED giochi simulazione",
-    "Nintendo Switch OLED giochi educativi",
-    "Nintendo Switch OLED giochi indie",
-    "Nintendo Switch OLED giochi classici",
-    "Nintendo Switch OLED giochi retro",
-    "Nintendo Switch OLED giochi VR",
-    "Nintendo Switch OLED giochi online",
-    "Nintendo Switch OLED giochi offline",
-    "Nintendo Switch OLED giochi DLC",
-    "Nintendo Switch OLED giochi espansioni",
-    "Nintendo Switch OLED giochi edizioni speciali",
-    "Nintendo Switch OLED giochi edizioni limitate",
-    "Nintendo Switch OLED giochi edizioni collezionisti",
-    "Nintendo Switch OLED giochi edizioni da collezione",
+    #"Nintendo Switch OLED Mario Kart",
+    #"Nintendo Switch OLED Zelda",
+    #"Nintendo Switch OLED Animal Crossing",
+    #"Nintendo Switch OLED Super Smash Bros",
+    #"Nintendo Switch OLED Pokémon",
+    #"Nintendo Switch OLED Splatoon",
+    #"Nintendo Switch OLED Minecraft",
+    #"Nintendo Switch OLED Fortnite",
+    #"Nintendo Switch OLED FIFA",
+    #"Nintendo Switch OLED giochi usati",
+    #"Nintendo Switch OLED giochi nuovi",
+    #"Nintendo Switch OLED giochi in scatola",
+    #"Nintendo Switch OLED giochi a buon prezzo",
+    #"Nintendo Switch OLED giochi offerta",
+    #"Nintendo Switch OLED giochi bundle",
+    #"Nintendo Switch OLED giochi multiplayer",
+    #"Nintendo Switch OLED giochi single player",
+    #"Nintendo Switch OLED giochi RPG",
+    #"Nintendo Switch OLED giochi avventura",
+    #"Nintendo Switch OLED giochi sport",
+    #"Nintendo Switch OLED giochi azione",
+    #"Nintendo Switch OLED giochi strategia",
+    #"Nintendo Switch OLED giochi puzzle",
+    #"Nintendo Switch OLED giochi simulazione",
+    #"Nintendo Switch OLED giochi educativi",
+    #"Nintendo Switch OLED giochi indie",
+    #"Nintendo Switch OLED giochi classici",
+    #"Nintendo Switch OLED giochi retro",
+    #"Nintendo Switch OLED giochi VR",
+    #"Nintendo Switch OLED giochi online",
+    #"Nintendo Switch OLED giochi offline",
+    #"Nintendo Switch OLED giochi DLC",
+    #"Nintendo Switch OLED giochi espansioni",
+    #"Nintendo Switch OLED giochi edizioni speciali",
+    #"Nintendo Switch OLED giochi edizioni limitate",
+    #"Nintendo Switch OLED giochi edizioni collezionisti",
+    #"Nintendo Switch OLED giochi edizioni da collezione",
     "Nintendo Switch",
-    "Nintendo Switch usata",
-    "Nintendo Switch nuova",
-    "Nintendo Switch in scatola",
+    "Nintendo Switch lite",
+    #"Nintendo Switch usata",
+    #"Nintendo Switch nuova",
+    #"Nintendo Switch in scatola",
     "Nintendo Switch con giochi",
-    "Nintendo Switch bundle",
-    "Nintendo Switch a buon prezzo",
-    "Nintendo Switch offerta",
-    "Nintendo Switch accessori",
-    "Nintendo Switch controller",
-    "Nintendo Switch dock",
-    "Nintendo Switch custodia",
-    "Nintendo Switch caricabatterie",
-    "Nintendo Switch power bank",
-    "Nintendo Switch memory card",
-    "Nintendo Switch joystick",
-    "Nintendo Switch grips",
-    "Nintendo Switch adattatore",
-    "Nintendo Switch cavo HDMI",
-    "Nintendo Switch joy-con",
-    "Nintendo Switch giochi",
-    "Nintendo Switch Mario Kart",
-    "Nintendo Switch Zelda",
-    "Nintendo Switch Animal Crossing",
-    "Nintendo Switch Super Smash Bros",
-    "Nintendo Switch Pokémon",
-    "Nintendo Switch Splatoon",
-    "Nintendo Switch Minecraft",
-    "Nintendo Switch Fortnite",
-    "Nintendo Switch FIFA",
-    "Nintendo Switch giochi usati",
-    "Nintendo Switch giochi nuovi",
-    "Nintendo Switch giochi in scatola",
-    "Nintendo Switch giochi a buon prezzo",
-    "Nintendo Switch giochi offerta",
-    "Nintendo Switch giochi bundle",
-    "Nintendo Switch giochi multiplayer",
-    "Nintendo Switch giochi single player",
-    "Nintendo Switch giochi RPG",
-    "Nintendo Switch giochi avventura",
-    "Nintendo Switch giochi sport",
-    "Nintendo Switch giochi azione",
-    "Nintendo Switch giochi strategia",
-    "Nintendo Switch giochi puzzle",
-    "Nintendo Switch giochi simulazione",
-    "Nintendo Switch giochi educativi",
-    "Nintendo Switch giochi indie",
-    "Nintendo Switch giochi classici",
-    "Nintendo Switch giochi retro",
-    "Nintendo Switch giochi VR",
-    "Nintendo Switch giochi online",
-    "Nintendo Switch giochi offline",
-    "Nintendo Switch giochi DLC",
-    "Nintendo Switch giochi espansioni",
-    "Nintendo Switch giochi edizioni speciali",
-    "Nintendo Switch giochi edizioni limitate",
-    "Nintendo Switch giochi edizioni collezionisti",
-    "Nintendo Switch giochi edizioni da collezione",
-    "giochi Nintendo Switch",
-    "giochi switch",
-    "switch games",
-    "giochi nintendo switch usati",
-    "giochi switch usati",
+    #"Nintendo Switch bundle",
+    #"Nintendo Switch a buon prezzo",
+    #"Nintendo Switch offerta",
+   # "Nintendo Switch accessori",
+   # "Nintendo Switch controller",
+   # "Nintendo Switch dock",
+   # "Nintendo Switch custodia",
+   # "Nintendo Switch caricabatterie",
+  #  "Nintendo Switch power bank",
+  #  "Nintendo Switch memory card",
+    #"Nintendo Switch joystick",
+  #  "Nintendo Switch grips",
+  #  "Nintendo Switch adattatore",
+   # "Nintendo Switch cavo HDMI",
+  #  "Nintendo Switch joy-con",
 
-    # Generi
-    "giochi Nintendo Switch avventura",
-    "giochi Nintendo Switch azione",
-    "giochi Nintendo Switch rpg",
-    "giochi Nintendo Switch platform",
-    "giochi Nintendo Switch simulazione",
-    "giochi Nintendo Switch sport",
-    "giochi Nintendo Switch puzzle",
+    #"giochi nintendo switch usati",
+    #"giochi switch usati",
+
+
 
     # Popolari
-    "zelda tears of the kingdom",
-    "super mario odyssey",
-    "animal crossing new horizons",
-    "pokemon scarlatto",
-    "pokemon violetto",
-    "mario kart 8 deluxe",
-    "super smash bros ultimate",
-    "splatoon 3",
-    "luigi's mansion 3",
-    "metroid prime remastered",
-    "bayonetta 3",
-    "persona 5 royal",
-    "monster hunter rise",
-    "donkey kong country tropical freeze",
 
     # Età e target
-    "giochi Nintendo Switch bambini",
-    "giochi Nintendo Switch ragazzi",
-
-    # Condizioni
-    "giochi Nintendo Switch nuovi",
-    "giochi Nintendo Switch sigillati",
-    "giochi Nintendo Switch usati",
-    "giochi switch pari al nuovo",
-
-    # Edizioni speciali
-    "giochi Nintendo Switch edizione limitata",
-    "giochi Nintendo Switch collector edition",
-
+    #"giochi Nintendo Switch bambini",
+    #"giochi Nintendo Switch ragazzi",
     # Altre specifiche
-    "giochi Nintendo Switch cartuccia",
-    "switch giochi fisici",
+    #"giochi Nintendo Switch cartuccia",
+    #"switch giochi fisici",
 
     # Giochi specifici
-    "Zelda Breath of the Wild",
-    "Super Mario Odyssey",
-    "Animal Crossing",
+
     # Aggiungi altri titoli popolari qui...
 ]
+
+
+def search_keywords_price(pattern):
+    """
+    Cerca keyword nella tabella prezzi che corrispondono al pattern specificato.
+
+    Args:
+        pattern: Il pattern di ricerca (stringa).
+
+    Returns:
+        Una lista di tuple, dove ogni tupla rappresenta una riga trovata (keyword, prezzo).
+    """
+
+    conn = get_connection()  # Sostituisci con il nome del tuo database
+    cursor = conn.cursor()
+
+    query = "SELECT prezzo FROM prezzi WHERE keyword = ?"
+    cursor.execute(query, (pattern,))  # Aggiunge % all'inizio e alla fine del pattern
+
+    results = cursor.fetchall()
+    #print(results)
+    conn.close()
+    return results[0]
 
 
 def rileva_lingua(stringa):
@@ -383,17 +376,17 @@ page = 1
 while True:
     for keyword in nintendo_switch_games_keywords:
         # URL della pagina da raschiare
-        url = f"https://www.vinted.it/catalog?search_text={keyword}&order=newest_first&catalog[]=3025&page={page}"
+        soglia = search_keywords_price(keyword)[0]
+        url = f"https://www.vinted.it/catalog?search_text={keyword}&order=newest_first&page={page}&currency=EUR&price_to={soglia}"  #&catalog[]=3025&price_to=250
         print(url)
         # Impostazioni del driver
         driver = init_driver()  # Utilizza il driver per Chrome
-
-        # Apri la pagina
+        driver.minimize_window()
+# Apri la pagina
         driver.get(url)
-        time.sleep(2)
         try:
             # Trova tutti i div con le classi "feed-grid__item" e "feed-grid__item-content"
-            grid_items = WebDriverWait(driver, 10).until(
+            grid_items = WebDriverWait(driver, 3).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".feed-grid__item"))
             )
         except TimeoutException as e:
@@ -402,7 +395,6 @@ while True:
         i = 0
         # Itera sui div trovati
         for item in grid_items:
-
             try:
 
                 # Trova il primo href con la classe "new-item-box__overlay new-item-box__overlay--clickable"
@@ -426,27 +418,32 @@ while True:
 
                 # Navigate to a URL in the new tab
                 driver.get(href)
+                driver.minimize_window()
                 time.sleep(1)
                 element = driver.find_element(By.XPATH, '//div[@class="u-text-wrap" and @itemprop="description"]')
 
                 # Extract the text content
                 extracted_text = element.text
-                if rileva_lingua(extracted_text) != 'it':
+                if rileva_lingua(extracted_text) == 'de':
+                    driver.close()
+                    driver.switch_to.window(driver.window_handles[0])
                     continue
+
                 # Print the extracted text
 
                 driver.close()
                 driver.switch_to.window(driver.window_handles[0])
-                if ((
-                        #extracted_text.__contains__('switch')
-                        #or
-                        #titolo.__contains__('switch')
+                if (
+                        (
+                        check_words_in_text(keyword, extracted_text)
+                        or
+                        check_words_in_text(keyword, titolo)
                         )
                         and
-                        convert_to_float(price) <= 220
+                        convert_to_float(price) <= soglia
                         #and get_annuncio_by_url(href) is None
                         #and rileva_lingua(extracted_text) == 'it'
-                    ):
+                ):
                     print(f"Link: {href}")
                     print(titolo)
                     print(f"Prezzo: {price}")
@@ -459,7 +456,9 @@ while True:
                         'target_lang': 'IT'  # Target language (Italian)
                     }
 
-                    create_annuncio(titolo, href, price, extracted_text)
+                    create_annuncio(titolo, href, convert_to_float(price), extracted_text)
+                    asyncio.run(send_message_to_telegram(chat_id, f"Link: {href} | Titolo: {titolo} | Prezzo: {price} "))
+                    asyncio.run(send_message_to_telegram('Vik_ing_Re', f"Link: {href} | Titolo: {titolo} | Prezzo: {price} "))
                     # Send the request
                     #response = requests.post(url, data=params)
                     #result = response.json()
@@ -473,8 +472,8 @@ while True:
                     break
 
             except Exception as e:
-                print("Errore: ")
-                print(e)
+                #print("Errore: ")
+                #print(e)
                 continue
         #page = page + 1
         driver.quit()
