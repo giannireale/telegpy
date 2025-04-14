@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 import sqlite3
+import tempfile
 import time
 
 import requests
@@ -169,11 +170,16 @@ def delete_annuncio(annuncio_id):
 
 # Initialize table
 create_table()
+from selenium import webdriver
+from chromedriver_py import binary_path
+
 
 
 def init_driver():
+    user_data_dir = tempfile.mkdtemp(prefix="chrome_", dir="/tmp")
     os.environ["LANG"] = "it_IT.UTF-8"
     options = webdriver.ChromeOptions()
+    options.add_argument(f"--user-data-dir={user_data_dir}")
     options.add_argument("--lang=it-IT")  # Imposta la lingua su italiano
     options.add_argument("--locale=it-IT")  # Imposta il locale su italiano
     options.add_argument(f"--accept-lang=it")
@@ -185,11 +191,10 @@ def init_driver():
     options.add_argument('--window-position=-32000,-32000')
     options.add_argument('--start-minimized')  # Avvia minimizzato
     options.add_experimental_option('prefs', {'intl.accept_languages': f'it,it-IT'})
-    service = Service('C:/driver/chromedriver.exe')
+    service = Service(binary_path)
     # Inizializza il driver con il servizio
     ua = UserAgent()
     user_agent = ua.chrome
-    options = webdriver.ChromeOptions()
     options.add_argument(f'user-agent={user_agent}')
     driver_new = webdriver.Chrome(service=service, options=options)
     driver_new.execute_script("""

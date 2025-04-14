@@ -293,7 +293,6 @@ async def init_driver():
     # Inizializza il driver con il servizio
     ua = UserAgent()
     user_agent = ua.random
-    options = webdriver.ChromeOptions()
     options.add_argument(f'user-agent={user_agent}')
     driver = webdriver.Chrome(service=service, options=options)
     driver.execute_script("""
