@@ -8,6 +8,7 @@ from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
+from chromedriver_py import binary_path
 from fake_useragent import UserAgent
 from selenium import webdriver
 from selenium.webdriver import ActionChains
@@ -213,11 +214,10 @@ def init_driver():
     #options.add_argument('--window-position=-32000,-32000')
     options.add_argument('--start-minimized')  # Avvia minimizzato
     options.add_experimental_option('prefs', {'intl.accept_languages': f'it,it-IT'})
-    service = Service('C:/driver/chromedriver.exe')
+    service = Service(binary_path)
     # Inizializza il driver con il servizio
     ua = UserAgent()
     user_agent = ua.random
-    options = webdriver.ChromeOptions()
     options.add_argument(f'user-agent={user_agent}')
     driver = webdriver.Chrome(service=service, options=options)
     driver.execute_script("""

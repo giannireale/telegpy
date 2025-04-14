@@ -4,7 +4,8 @@ import os
 import re
 import sqlite3
 import time
-
+from selenium import webdriver
+from chromedriver_py import binary_path
 import aiohttp
 import requests
 from bs4 import BeautifulSoup
@@ -42,15 +43,14 @@ def init_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--no-sandbox")
-    options.add_argument('--window-position=-32000,-32000')
-    options.add_argument('--start-minimized')  # Avvia minimizzato
+    #options.add_argument('--window-position=-32000,-32000')
+    #options.add_argument('--start-minimized')  # Avvia minimizzato
     options.add_experimental_option('prefs', {'intl.accept_languages': f'it,it-IT'})
-    service = Service('C:/driver/chromedriver.exe')
+    service = Service(binary_path)
     # Inizializza il driver con il servizio
     ua = UserAgent()
     user_agent = ua.browsers
-    options = webdriver.ChromeOptions()
-    options.add_argument(f'user-agent={user_agent}')
+    #options.add_argument(f'user-agent={user_agent}')
     driver = webdriver.Chrome(service=service, options=options)
     driver.execute_script("""
     Object.defineProperty(navigator, 'webdriver', {

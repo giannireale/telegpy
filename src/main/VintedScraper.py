@@ -5,6 +5,7 @@ import sqlite3
 import time
 
 import requests
+from chromedriver_py import binary_path
 from fake_useragent import UserAgent
 from langdetect import detect
 from selenium import webdriver
@@ -186,11 +187,10 @@ def init_driver():
     options.add_argument('--window-position=-32000,-32000')
     options.add_argument('--start-minimized')  # Avvia minimizzato
     options.add_experimental_option('prefs', {'intl.accept_languages': f'it,it-IT'})
-    service = Service('C:/driver/chromedriver.exe')
+    service = Service(binary_path)
     # Inizializza il driver con il servizio
     ua = UserAgent()
     user_agent = ua.chrome
-    options = webdriver.ChromeOptions()
     options.add_argument(f'user-agent={user_agent}')
     driver_new = webdriver.Chrome(service=service, options=options)
     driver_new.execute_script("""

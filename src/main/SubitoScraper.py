@@ -4,7 +4,8 @@ import re
 import sqlite3
 import tempfile
 import time
-
+from selenium import webdriver
+from chromedriver_py import binary_path
 import requests
 from fake_useragent import UserAgent
 from langdetect import detect
@@ -170,8 +171,7 @@ def delete_annuncio(annuncio_id):
 
 # Initialize table
 create_table()
-from selenium import webdriver
-from chromedriver_py import binary_path
+
 
 
 
